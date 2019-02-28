@@ -21,19 +21,6 @@ class Exist:
             username and password
     attributes - Your attributes - a dict of dicts
     """
-    what_attributes = {"steps": 0, "steps_active_mins": 1, "floors": 2,
-                       "steps_elevation": 3, "steps_distance": 4,
-                       "floors_goal": 5,"steps_goal": 6, "productive_min": 7,
-                       "distracting_min": 8, "commits": 9,
-                       "tasks_completed": 10, "neutral_min": 11,
-                       "productive_min_goal": 12, "mood": 13, "sleep": 14,
-                       "time_in_bed": 16, "sleep_start": 19, "mood_note": 20,
-                       "sleep_end": 21, "sleep_awakenings": 22,
-                       "sleep_goal": 23, "events": 24, "weight": 25,
-                       "events_duration": 26, "heartrate": 27, "tracks": 28,
-                       "tweets": 29, "twitter_mentions": 30, "location": 31,
-                       "location_name": 32}
-
     def __init__(self, token="", **kwargs):
         """Instantiation: If no username and password read token from local file
         args
@@ -50,23 +37,15 @@ class Exist:
             all_results_date_min: oldest value that can be returned YYYY-mm-dd
             all_results_date_max: newest value that can be returned YYYY-mm-dd
         """
+        self.actual_attributes = ["steps", "steps_active_min", "steps_elevation", "steps_distance", "steps_goal", "productive_min", "distracting_min", "commits", "tasks_completed", "emails_received", "emails_sent", "neutral_min", "mood", "sleep", "workouts", "workouts_min", "sleep_start", "mood_note", "sleep_end", "events", "weight", "body_fat", "events_duration", "meditation_min", "heartrate", "tracks", "articles_read", "article_words", "tweets", "twitter_mentions", "location", "location_name", "weather_temp_max", "weather_temp_min", "weather_precipitation", "weather_air_pressure", "weather_cloud_cover", "weather_humidity", "weather_wind_speed", "day_length"]
         params = {}
-        self.attributes = {"all_attributes": [], "steps": [],
-                           "steps_active_min": [], "steps_distance": [],
-                           "steps_goal": [], "productive_min": [],
-                           "distracting_min": [], "neutral_min": [],
-                           "productive_min_goal": [], "commits": [],
-                           "tasks_completed": [], "mood": [], "mood_note": [],
-                           "sleep": [], "time_in_bed": [], "sleep_start": [],
-                           "sleep_end": [], "sleep_awakenings": [],
-                           "sleep_goal": [], "events": [],
-                           "events_duration": [], "weight": [],
-                           "heartrate": [], "tracks": [], "location": [],
-                           "checkins": [], "tweets": [],
-                           "twitter_mentions": [], "location_name": []}
+        self.attributes = {"all_attributes": []}
+        self.dataframe_dict = {}
 
         self.token = token
         self.data_frames = {}
+        self.attribute_dict = {}
+        self.dates = []
         if kwargs:
             for key in kwargs.keys():
                 if key == "username":
@@ -86,6 +65,7 @@ class Exist:
                 params.pop("username")
                 params.pop("password")
                 self.get_attributes(**params)
+                self.prepare_attributes()
                 self.get_insights()
                 self.get_averages()
                 self.get_today()
@@ -99,6 +79,7 @@ class Exist:
                 with open("token.txt", "r") as file:
                     self.token = file.readline().rstrip()
                 self.get_attributes(**params)
+                self.prepare_attributes()
                 self.get_insights()
                 self.get_averages()
                 self.get_today()
@@ -106,9 +87,53 @@ class Exist:
             with open("token.txt", "r") as file:
                 self.token = file.readline().rstrip()
             self.get_attributes()
+            self.prepare_attributes()
             self.get_insights()
             self.get_averages()
             self.get_today()
+
+    def prepare_attributes(self):
+        self.create_attribute_dict()
+        self.populate_attributes_dict()
+        self.reverse_attributes()
+        
+    def prepare_for_pandas(self):
+        self.create_date_array()
+        self.create_dataframe_dict()
+        
+    def create_dataframe_dict(self):
+        for key,value in self.attributes.items():
+            data_array = []
+            if key in self.actual_attributes:
+                for x in value.values["values"]:
+                    data_array.append(x["value"])
+                    self.dataframe_dict[key] = data_array
+
+    def create_dataframe(self):
+       df = pd.DataFrame(self.dataframe_dict, columns = [key for key in self.dataframe_dict.keys()]) 
+       df.index = self.dates
+       return df
+
+    def reverse_attributes(self):
+        for key, value in self.attributes.items():
+            if key != "all_attributes":
+                value.values["values"] = value.values["values"][::-1]
+
+    def create_date_array(self):
+        for x in self.attributes["mood"].values["values"]:
+            self.dates.append(x["date"])
+
+    def create_attribute_dict(self):
+        count = 0
+        for x in self.attributes["all_attributes"][0].values:
+            self.attribute_dict.update({x["attribute"]: count})
+            count = count + 1
+
+    def populate_attributes_dict(self):
+        for key, value in self.attribute_dict.items():
+            for x in self.attributes["all_attributes"]:
+                self.attributes.update({key: DateValues(x.name,x.values[self.attribute_dict[key]])})
+
 
     def get_token(self, username, password):
         """get_token("username", "password")
@@ -228,64 +253,6 @@ class Exist:
                          headers=headers, timeout=5)
         r.raise_for_status()
         self.averages = r.json()
-
-    def by_day(self, attribute):
-        #TODO - fix this
-        if self.attributes[attribute]:
-            for timedelta in self.attributes[attribute]:
-                thing_list = [day["value"] for day in self.attributes[attribute][timedelta].values["results"]][::-1]
-                dates = [day["date"] for day in self.attributes[attribute][timedelta].values["results"]][::-1]
-                what = np.array(thing_list)
-                values_dates = DateValues(timedelta, what, days=[datetime.strptime(d, "%Y-%M-%d") for d in dates])
-        elif self.attributes["all_attributes"]:
-            for index, datevalue in enumerate(self.attributes["all_attributes"]):
-                thing_list = [day["value"] for day in self.attributes["all_attributes"][index].values[self.what_attributes[attribute]]["values"][::-1]]
-                dates = [day["date"] for day in self.attributes["all_attributes"][index].values[self.what_attributes[attribute]]["values"][::-1]]
-                what = np.array(thing_list)
-                values_dates = DateValues(datevalue.name, what, days=[datetime.strptime(d, "%Y-%M-%d") for d in dates])
-        else:
-            raise KeyError("Bad key")
-
-        return values_dates
-
-    def all_attributes_by_day(self):
-        """Requires self.databutes["all_attributes"] to have been set by
-        self.get_attributes()
-        Sets self.data_frames[daterange] to the corresponding dataframe
-        from make_dataframe"""
-        all = {}
-        for index, timedelta in enumerate(self.attributes["all_attributes"]):
-            all[timedelta.name] = {}
-            for attribute in self.attributes["all_attributes"][index].values:
-                thing_list = [day["value"] for day in attribute["values"][::-1]]
-                dates = [day["date"] for day in attribute["values"][::-1]]
-                what = np.array(thing_list)
-                values_dates = DateValues(timedelta.name, what, days=[datetime.strptime(d, "%Y-%m-%d") for d in dates])
-                all[timedelta.name][attribute["attribute"]] = values_dates
-            self.data_frames[timedelta.name] = self.make_dataframe(all)
-
-    def make_dataframe(self, dict):
-        """Make a pandas data-frame with the dates as indices
-        Extracts inner dictionary values from DateValues object and uses them
-        to create a data-frame of all Exist data with indices as dates.
-        args:
-            dict - nested dictionary of DateValues objects with first
-            key the date range and each inner key the corresponding attribute
-            and its value the corresponding DateValues object"""
-        dict = list(dict.values())[0]
-        dataframe_dict = {}
-        dates = {}
-        dates.update({"dates": dict["steps"].days})
-        for key in dict:
-            dataframe_dict.update({key: dict[key].values})
-        dataframe = pd.DataFrame(data=dataframe_dict, index=dates["dates"])
-        return dataframe
-
-    def plot_by_day(self, attribute):
-        values, days = self.by_day(attribute)
-
-        y = list(values.values())[0]
-        xs = matplotlib.dates.date2num(days)
 
 
 class DateValues:
